@@ -6,18 +6,19 @@ import { QUIZZES } from '@/data/quizzes'
 
 const ADMIN_EMAIL = 'mouhamedsene.office@gmail.com'
 
-interface SupabaseUser {
+type Profile = {
   id: string
-  email: string
   created_at: string
-  last_sign_in_at: string
-  user_metadata: { full_name?: string; country?: string }
+  updated_at?: string
+  full_name?: string
+  email?: string
+  country?: string
 }
 
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [users, setUsers] = useState<SupabaseUser[]>([])
+  const [users, setUsers] = useState<Profile[]>([])
   const [stats, setStats] = useState({ total: 0, today: 0, week: 0 })
 
   useEffect(() => {
@@ -32,21 +33,20 @@ export default function AdminPage() {
       
       setIsAdmin(true)
 
-      // Fetch real users from profiles table
       const { data: profiles } = await supabase
         .from('profiles')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }) as { data: Profile[] | null }
 
       if (profiles) {
-        setUsers(profiles as any)
+        setUsers(profiles)
         const now = new Date()
-        const today = profiles.filter(p => {
-          const d = new Date(p.created_at)
+        const today = profiles.filter((p: Profile) => {
+          const d = new Date(p.created_at as string)
           return d.toDateString() === now.toDateString()
         }).length
-        const week = profiles.filter(p => {
-          const d = new Date(p.created_at)
+        const week = profiles.filter((p: Profile) => {
+          const d = new Date(p.created_at as string)
           return (now.getTime() - d.getTime()) < 7 * 24 * 60 * 60 * 1000
         }).length
         setStats({ total: profiles.length, today, week })
@@ -81,7 +81,6 @@ export default function AdminPage() {
         <p className="text-gray-500 text-sm mt-1">Vue globale de la plateforme Étudiant Mouride Academy</p>
       </div>
 
-      {/* Global stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
           { label: 'Utilisateurs total', value: stats.total, icon: '👥', color: 'bg-blue-50 text-blue-700' },
@@ -97,7 +96,6 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {/* Content stats */}
       <div className="grid lg:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <h2 className="font-display font-bold text-mouride-green mb-4">Contenu de la plateforme</h2>
@@ -136,7 +134,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Real users table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-display font-bold text-mouride-green">
@@ -161,7 +158,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {users.map((u: any) => {
+                {users.map((u: Profile) => {
                   const name = u.full_name || u.email?.split('@')[0] || 'Étudiant'
                   const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
                   return (
