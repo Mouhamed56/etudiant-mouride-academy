@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Poppins', sans-serif; }
+}
+
+@layer components {
+  .gradient-overlay { background: linear-gradient(135deg,#14532d 0%,#166534 50%,#14532d 100%); }
+  .gradient-mouride { background: linear-gradient(135deg,#14532d 0%,#166534 50%,#14532d 100%); }
+  .section-divider { width:4rem;height:.25rem;background:#D4B558;margin:0 auto;border-radius:9999px; }
+  .card-hover { transition:all .3s; }
+  .card-hover:hover { box-shadow:0 20px 25px -5px rgba(0,0,0,.1);transform:translateY(-4px); }
+  .pattern-bg { background-image:radial-gradient(circle,rgba(212,181,88,.1) 1px,transparent 1px);background-size:30px 30px; }
+  .quote-marks { font-size:4rem;color:#D4B558;font-family:'Playfair Display',serif;line-height:1;display:block; }
+  .btn-primary { @apply bg-mouride-green text-white font-semibold px-6 py-3 rounded-xl hover:bg-mouride-green-dark transition-all duration-200; }
+  .btn-secondary { @apply border-2 border-mouride-green text-mouride-green font-semibold px-6 py-3 rounded-xl hover:bg-mouride-cream transition-all duration-200; }
+  .btn-gold { @apply bg-mouride-gold text-mouride-green font-bold px-6 py-3 rounded-xl hover:bg-mouride-gold-light transition-all duration-200; }
+  .input-field { @apply w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-mouride-green/30 focus:border-mouride-green transition-all; }
+  .sidebar-link { @apply flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 hover:text-mouride-green hover:bg-mouride-cream transition-all; }
+  .sidebar-link.active { @apply bg-mouride-green text-white hover:bg-mouride-green-dark hover:text-white; }
+}
+
+@keyframes fade-in { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+@keyframes scale-in { from{opacity:0;transform:scale(.9)} to{opacity:1;transform:scale(1)} }
+@keyframes slide-up { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+.animate-fade-in  { animation:fade-in  .8s ease both; }
+.animate-scale-in { animation:scale-in .8s ease both; }
+.animate-slide-up { animation:slide-up .8s ease both; }
+.delay-200 { animation-delay:.2s; }
+.delay-400 { animation-delay:.4s; }
