@@ -1,28 +1,50 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { QUIZZES } from '@/data/quizzes'
-import { MODULES } from '@/data/modules'
+import { createClient } from '@/lib/supabase/client'
+import { QUIZZES as DEFAULT_QUIZZES } from '@/data/quizzes'
+import { MODULES as DEFAULT_MODULES } from '@/data/modules'
+import { useModules, useQuizzes } from '@/lib/useContent'
 
 type Screen = 'list' | 'quiz' | 'result'
 
-export default function QuizPage() {
+function QuizContent() {
   const params = useSearchParams()
   const moduleId = params.get('module')
+  const { modules: MODULES } = useModules()
+  const { quizzes: QUIZZES } = useQuizzes()
   const [screen, setScreen] = useState<Screen>('list')
   const [activeQuiz, setActiveQuiz] = useState<typeof QUIZZES[0] | null>(null)
   const [currentQ, setCurrentQ] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [answers, setAnswers] = useState<number[]>([])
   const [lang, setLang] = useState<'fr' | 'en'>('fr')
+  const [userId, setUserId] = useState('')
+  const [scores, setScores] = useState<Record<string, number>>({})
 
   useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserId(user.id)
+        const saved = localStorage.getItem(`ema-scores-${user.id}`)
+        if (saved) setScores(JSON.parse(saved))
+      }
+    }
+    load()
     if (moduleId) {
       const quiz = QUIZZES.find(q => q.module_id === moduleId)
       if (quiz) { setActiveQuiz(quiz); setScreen('quiz') }
     }
   }, [moduleId])
+
+  function saveScore(quizId: string, score: number) {
+    const updated = { ...scores, [quizId]: score }
+    setScores(updated)
+    if (userId) localStorage.setItem(`ema-scores-${userId}`, JSON.stringify(updated))
+  }
 
   function startQuiz(quiz: typeof QUIZZES[0]) {
     setActiveQuiz(quiz); setCurrentQ(0); setSelected(null); setAnswers([]); setScreen('quiz')
@@ -35,6 +57,8 @@ export default function QuizPage() {
     if (currentQ + 1 < activeQuiz.questions.length) {
       setCurrentQ(currentQ + 1); setSelected(null)
     } else {
+      const score = newAnswers.filter((a, i) => a === activeQuiz.questions[i]?.correct).length
+      saveScore(activeQuiz.id, score)
       setScreen('result')
     }
   }
@@ -59,15 +83,24 @@ export default function QuizPage() {
       <div className="space-y-4">
         {QUIZZES.map(quiz => {
           const mod = MODULES.find(m => m.id === quiz.module_id)
+          const savedScore = scores[quiz.id]
+          const savedPct = savedScore !== undefined ? Math.round((savedScore / quiz.questions.length) * 100) : null
           return (
             <div key={quiz.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center gap-4">
               <div className="text-3xl">{mod?.icon || '📝'}</div>
               <div className="flex-1">
                 <h3 className="font-display font-bold text-mouride-green">{lang === 'fr' ? quiz.title_fr : quiz.title_en}</h3>
-                <p className="text-gray-400 text-xs mt-1">{quiz.questions.length} questions · Module {mod?.order || '?'}</p>
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-gray-400 text-xs">{quiz.questions.length} questions</p>
+                  {savedPct !== null && (
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${savedPct >= 60 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      Dernier score: {savedPct}%
+                    </span>
+                  )}
+                </div>
               </div>
               <button onClick={() => startQuiz(quiz)} className="btn-gold py-2 px-5 text-sm flex-shrink-0">
-                Commencer →
+                {savedPct !== null ? 'Recommencer' : 'Commencer →'}
               </button>
             </div>
           )
@@ -86,7 +119,7 @@ export default function QuizPage() {
       <div className="max-w-2xl mx-auto animate-fade-in">
         <div className="flex items-center justify-between mb-6">
           <button onClick={() => setScreen('list')} className="text-gray-400 hover:text-mouride-green text-sm">← Quitter</button>
-          <span className="text-sm font-semibold text-mouride-green">{lang === 'fr' ? activeQuiz.title_fr : activeQuiz.title_en}</span>
+          <span className="text-sm font-semibold text-mouride-green truncate mx-4">{lang === 'fr' ? activeQuiz.title_fr : activeQuiz.title_en}</span>
           <div className="flex gap-2">
             {(['fr', 'en'] as const).map(l => (
               <button key={l} onClick={() => setLang(l)} className={`px-2 py-1 rounded-full text-xs font-bold ${lang === l ? 'bg-mouride-green text-white' : 'bg-gray-100 text-gray-500'}`}>{l.toUpperCase()}</button>
@@ -104,11 +137,11 @@ export default function QuizPage() {
           <h3 className="text-lg font-display font-bold text-mouride-green mb-6">{question}</h3>
           <div className="space-y-3">
             {options.map((opt, i) => {
-              let cls = 'border-gray-200 bg-white hover:border-mouride-green hover:bg-mouride-cream'
+              let cls = 'border-gray-200 bg-white hover:border-mouride-green hover:bg-mouride-cream cursor-pointer'
               if (selected !== null) {
-                if (i === q.correct) cls = 'border-green-500 bg-green-50'
-                else if (i === selected) cls = 'border-red-400 bg-red-50'
-                else cls = 'border-gray-100 bg-gray-50 opacity-50'
+                if (i === q.correct) cls = 'border-green-500 bg-green-50 cursor-default'
+                else if (i === selected) cls = 'border-red-400 bg-red-50 cursor-default'
+                else cls = 'border-gray-100 bg-gray-50 opacity-50 cursor-default'
               }
               return (
                 <button key={i} onClick={() => selected === null && setSelected(i)}
@@ -164,6 +197,7 @@ export default function QuizPage() {
               </div>
             ))}
           </div>
+          <p className="text-xs text-green-600 bg-green-50 rounded-lg px-3 py-2 mb-4">✅ Score sauvegardé</p>
           <div className="flex gap-3">
             <button onClick={() => startQuiz(activeQuiz)} className="flex-1 btn-primary py-3 text-sm">🔄 Recommencer</button>
             <button onClick={() => setScreen('list')} className="flex-1 btn-secondary py-3 text-sm">← Tous les quiz</button>
@@ -174,4 +208,12 @@ export default function QuizPage() {
   }
 
   return null
+}
+
+export default function QuizPage() {
+  return (
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><div className="w-8 h-8 border-4 border-mouride-gold border-t-transparent rounded-full animate-spin"/></div>}>
+      <QuizContent />
+    </Suspense>
+  )
 }

@@ -3,27 +3,45 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MODULES, COURSES } from '@/data/modules'
+import { QUIZZES } from '@/data/quizzes'
 
 export default function DashboardPage() {
   const [userName, setUserName] = useState('Étudiant mouride')
+  const [progress, setProgress] = useState<Record<string, boolean>>({})
+  const [quizScores, setQuizScores] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    async function getUser() {
+    async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        setUserName(user.user_metadata?.full_name || user.email?.split('@')[0] || 'Étudiant mouride')
+        const name = user.user_metadata?.full_name || 
+                     `${user.user_metadata?.first_name || ''} ${user.user_metadata?.last_name || ''}`.trim() ||
+                     user.email?.split('@')[0] || 'Étudiant mouride'
+        setUserName(name)
+
+        // Load progress from localStorage
+        const savedProgress = localStorage.getItem(`ema-progress-${user.id}`)
+        if (savedProgress) setProgress(JSON.parse(savedProgress))
+        
+        const savedScores = localStorage.getItem(`ema-scores-${user.id}`)
+        if (savedScores) setQuizScores(JSON.parse(savedScores))
       }
     }
-    getUser()
+    load()
   }, [])
 
-  const stats = [
-    { label: 'Modules complétés', value: '0', icon: '✅', color: 'bg-green-50 text-green-700' },
-    { label: 'Quiz réussis', value: '0', icon: '🎯', color: 'bg-amber-50 text-amber-700' },
-    { label: 'Minutes d\'étude', value: '0', icon: '⏱️', color: 'bg-blue-50 text-blue-700' },
-    { label: 'Leçons vues', value: '0', icon: '📖', color: 'bg-purple-50 text-purple-700' },
+  const totalLecons = MODULES.reduce((t, m) => t + m.lecons.length, 0)
+  const completedLecons = Object.values(progress).filter(Boolean).length
+  const completedQuizzes = Object.keys(quizScores).length
+  const progressPct = totalLecons > 0 ? Math.round((completedLecons / totalLecons) * 100) : 0
+
+  const quotes = [
+    { fr: "Ne passez jamais une journée sans apprendre quelque chose de nouveau, car le manque de connaissance tue le cœur.", src: "Cheikh Ahmadou Bamba, Nahju" },
+    { fr: "Ô vous les adolescents ! ne vous préoccupez que de droiture, évertuez-vous à la recherche du savoir.", src: "Tazawudu Sighaar" },
+    { fr: "Essaie toujours de te cacher toi qui est à la quête du savoir. Aie de la détermination ainsi tu dépasseras ta génération.", src: "Kun Katiman" },
   ]
+  const todayQuote = quotes[new Date().getDay() % quotes.length]
 
   return (
     <div className="max-w-5xl animate-fade-in">
@@ -32,26 +50,43 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-display font-bold mb-1">
           Bienvenue, Étudiant mouride 👋 dàl ak Jamm
         </h1>
-        <p className="text-green-200">Continuez votre apprentissage de la pensée mouride.</p>
+        <p className="text-green-200 text-sm">Continuez votre apprentissage de la pensée mouride.</p>
         <div className="mt-4 bg-white/10 rounded-xl p-4 border border-white/20">
-          <p className="text-mouride-gold text-sm font-semibold mb-1">Citation du jour</p>
-          <p className="text-white italic font-display">
-            &ldquo;Ne passez jamais une journée sans apprendre quelque chose de nouveau, car le manque de connaissance tue le cœur.&rdquo;
-          </p>
-          <p className="text-green-300 text-xs mt-2">— Cheikh Ahmadou Bamba, Nahju</p>
+          <p className="text-mouride-gold text-xs font-semibold mb-1">Citation du jour</p>
+          <p className="text-white italic font-display text-sm leading-relaxed">&ldquo;{todayQuote.fr}&rdquo;</p>
+          <p className="text-green-300 text-xs mt-2">— {todayQuote.src}</p>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((s, i) => (
-          <div key={i} className={`rounded-2xl p-4 ${s.color} border border-current/10`}>
+        {[
+          { label: 'Leçons complétées', value: `${completedLecons}/${totalLecons}`, icon: '✅', color: 'bg-green-50 text-green-700' },
+          { label: 'Quiz réussis', value: `${completedQuizzes}/${QUIZZES.length}`, icon: '🎯', color: 'bg-amber-50 text-amber-700' },
+          { label: 'Progression', value: `${progressPct}%`, icon: '📊', color: 'bg-blue-50 text-blue-700' },
+          { label: 'Modules', value: `${MODULES.length}`, icon: '📚', color: 'bg-purple-50 text-purple-700' },
+        ].map((s, i) => (
+          <div key={i} className={`rounded-2xl p-4 ${s.color}`}>
             <div className="text-2xl mb-1">{s.icon}</div>
             <div className="text-2xl font-display font-bold">{s.value}</div>
             <div className="text-xs mt-1 opacity-80">{s.label}</div>
           </div>
         ))}
       </div>
+
+      {/* Progress bar */}
+      {progressPct > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-8">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-semibold text-mouride-green">Progression globale</span>
+            <span className="text-mouride-gold font-bold">{progressPct}%</span>
+          </div>
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-mouride-gold to-mouride-gold-light rounded-full transition-all duration-1000"
+              style={{ width: `${progressPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* Course */}
       <div className="mb-8">
@@ -66,23 +101,14 @@ export default function DashboardPage() {
               <div className="flex-1">
                 <h3 className="font-display font-bold text-mouride-green text-lg">{course.title_fr}</h3>
                 <p className="text-gray-500 text-sm mt-1">{course.description_fr}</p>
-                <div className="flex gap-4 mt-3 text-xs text-gray-400">
+                <div className="flex gap-4 mt-2 text-xs text-gray-400">
                   <span>📚 {course.modules_count} modules</span>
                   <span>📝 {course.lecons_count} leçons</span>
                   <span>⏱️ {course.duration_min} min</span>
                   <span>✍️ {course.author}</span>
                 </div>
-                <div className="mt-4">
-                  <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Progression</span>
-                    <span>0%</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full">
-                    <div className="h-full bg-mouride-gold rounded-full w-0" />
-                  </div>
-                </div>
                 <Link href="/learn" className="btn-gold inline-block mt-4 py-2 px-6 text-sm">
-                  Commencer →
+                  {completedLecons > 0 ? 'Continuer →' : 'Commencer →'}
                 </Link>
               </div>
             </div>
@@ -90,23 +116,28 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Modules preview */}
+      {/* Modules list */}
       <div>
-        <h2 className="text-xl font-display font-bold text-mouride-green mb-4">Les modules du cours</h2>
+        <h2 className="text-xl font-display font-bold text-mouride-green mb-4">Les modules</h2>
         <div className="space-y-3">
-          {MODULES.map((mod, i) => (
-            <Link key={mod.id} href={`/learn/${mod.id}`}
-              className="flex items-center gap-4 bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-mouride-gold hover:shadow-md transition-all">
-              <div className="w-10 h-10 bg-mouride-cream rounded-xl flex items-center justify-center text-xl flex-shrink-0">
-                {mod.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-mouride-green text-sm truncate">{mod.title_fr}</p>
-                <p className="text-gray-400 text-xs">{mod.lecons.length} leçons</p>
-              </div>
-              <div className="text-gray-300 text-lg">›</div>
-            </Link>
-          ))}
+          {MODULES.map(mod => {
+            const modCompleted = mod.lecons.every(l => progress[l.id])
+            const modProgress = mod.lecons.filter(l => progress[l.id]).length
+            return (
+              <Link key={mod.id} href={`/learn/${mod.id}`}
+                className="flex items-center gap-4 bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-mouride-gold hover:shadow-md transition-all">
+                <div className="w-10 h-10 bg-mouride-cream rounded-xl flex items-center justify-center text-xl flex-shrink-0">
+                  {mod.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-mouride-green text-sm truncate">{mod.title_fr}</p>
+                  <p className="text-gray-400 text-xs">{modProgress}/{mod.lecons.length} leçons</p>
+                </div>
+                {modCompleted && <span className="text-green-500 text-lg">✅</span>}
+                <div className="text-gray-300 text-lg">›</div>
+              </Link>
+            )
+          })}
         </div>
       </div>
     </div>

@@ -8,6 +8,9 @@ const poppins = Poppins({ subsets:['latin'], weight:['300','400','500','600','70
 export const metadata: Metadata = {
   title: 'Étudiant Mouride Academy',
   description: 'Plateforme éducative dédiée à la pensée de Cheikh Ahmadou Bamba',
+  icons: {
+    icon: '/images/logo.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

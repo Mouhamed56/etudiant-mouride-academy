@@ -1,14 +1,25 @@
 'use client'
 import Link from 'next/link'
-import { MODULES, COURSES } from '@/data/modules'
-import { QUIZZES } from '@/data/quizzes'
+import { COURSES } from '@/data/modules'
+import { useModules, useQuizzes } from '@/lib/useContent'
 
 export default function LearnPage() {
+  const { modules, loading: loadingMods } = useModules()
+  const { quizzes, loading: loadingQuiz } = useQuizzes()
+
+  if (loadingMods || loadingQuiz) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="w-8 h-8 border-4 border-mouride-gold border-t-transparent rounded-full animate-spin"/>
+    </div>
+  )
+
   return (
     <div className="max-w-4xl animate-fade-in">
       <div className="mb-8">
         <h1 className="text-3xl font-display font-bold text-mouride-green">Parcours d&apos;apprentissage</h1>
-        <p className="text-gray-500 mt-1 text-sm">Extrait du livre de Mouhamed Sène — {MODULES.reduce((t, m) => t + m.lecons.length, 0)} leçons · {MODULES.length} modules</p>
+        <p className="text-gray-500 mt-1 text-sm">
+          {modules.reduce((t, m) => t + m.lecons.length, 0)} leçons · {modules.length} modules
+        </p>
       </div>
 
       {/* Course card */}
@@ -18,8 +29,8 @@ export default function LearnPage() {
           <h2 className="font-display font-bold text-2xl mb-2">{c.title_fr}</h2>
           <p className="text-green-200 text-sm mb-4">{c.description_fr}</p>
           <div className="flex flex-wrap gap-4 text-xs text-green-300">
-            <span>📚 {c.modules_count} modules</span>
-            <span>📝 {c.lecons_count} leçons</span>
+            <span>📚 {modules.length} modules</span>
+            <span>📝 {modules.reduce((t, m) => t + m.lecons.length, 0)} leçons</span>
             <span>⏱️ {c.duration_min} min</span>
             <span>✍️ {c.author}</span>
           </div>
@@ -28,8 +39,8 @@ export default function LearnPage() {
 
       {/* Modules list */}
       <div className="space-y-4">
-        {MODULES.map((mod, idx) => {
-          const quiz = QUIZZES.find(q => q.module_id === mod.id)
+        {modules.map((mod, idx) => {
+          const quiz = quizzes.find(q => q.module_id === mod.id)
           return (
             <div key={mod.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-5 flex items-start gap-4">
@@ -38,7 +49,9 @@ export default function LearnPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold text-mouride-gold bg-mouride-gold/10 px-2 py-0.5 rounded-full">Module {idx + 1}</span>
+                    <span className="text-xs font-semibold text-mouride-gold bg-mouride-gold/10 px-2 py-0.5 rounded-full">
+                      Module {idx + 1}
+                    </span>
                   </div>
                   <h3 className="font-display font-bold text-mouride-green">{mod.title_fr}</h3>
                   <p className="text-gray-500 text-sm mt-1">{mod.description_fr}</p>

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { MODULES } from '@/data/modules'
 import { QUIZZES } from '@/data/quizzes'
@@ -70,25 +70,22 @@ export default function AdminPage() {
   const [users, setUsers] = useState<Profile[]>([])
   const [stats, setStats] = useState({ total:0, today:0, week:0 })
   const [search, setSearch] = useState('')
+  const [savedMsg, setSavedMsg] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  // Announcements state
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    { id:'1', title:'Grand Magal de Touba', message:'Le Grand Magal aura lieu le 18 Safar. Préparez-vous spirituellement.', active:true, created_at:'2026-04-01' },
-    { id:'2', title:'Nouveau module disponible', message:"Le module 5 sur l'héritage contemporain est maintenant disponible.", active:true, created_at:'2026-04-15' },
-  ])
+  // Data states
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [newAnn, setNewAnn] = useState({ title:'', message:'' })
-
-  // Content editing state
   const [modules, setModules] = useState<ModuleData[]>(MODULES as any)
+  const [quizzes, setQuizzes] = useState<QuizData[]>(QUIZZES as any)
+
+  // Edit states
   const [editingModule, setEditingModule] = useState<string | null>(null)
   const [editingLecon, setEditingLecon] = useState<string | null>(null)
   const [editModuleData, setEditModuleData] = useState<Partial<ModuleData>>({})
   const [editLeconData, setEditLeconData] = useState<Partial<ModuleLecon>>({})
   const [addingLecon, setAddingLecon] = useState<string | null>(null)
   const [newLecon, setNewLecon] = useState({ title_fr:'', title_en:'', content_fr:'', content_en:'', duration_min:10 })
-
-  // Quiz editing state
-  const [quizzes, setQuizzes] = useState<QuizData[]>(QUIZZES as any)
   const [editingQuiz, setEditingQuiz] = useState<string | null>(null)
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [editQData, setEditQData] = useState<Partial<QuizQuestion>>({})
@@ -99,17 +96,25 @@ export default function AdminPage() {
     correct:0, explanation_fr:'', explanation_en:''
   })
 
-  const [savedMsg, setSavedMsg] = useState('')
+  function showSaved(msg = '✅ Sauvegardé dans Supabase !') {
+    setSavedMsg(msg)
+    setTimeout(() => setSavedMsg(''), 3000)
+  }
 
+  const supabase = createClient()
+
+  // Load data from Supabase
   useEffect(() => {
     async function init() {
-      const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.email !== ADMIN_EMAIL) { setLoading(false); return }
       setIsAdmin(true)
+
+      // Load users
       const { data: profiles } = await supabase
         .from('profiles').select('*')
         .order('created_at', { ascending: false }) as { data: Profile[] | null }
+
       if (profiles) {
         setUsers(profiles)
         const now = new Date()
@@ -117,99 +122,153 @@ export default function AdminPage() {
         const week = profiles.filter((p: Profile) => (now.getTime() - new Date(p.created_at).getTime()) < 7*24*60*60*1000).length
         setStats({ total: profiles.length, today, week })
       }
+
+      // Load announcements from Supabase
+      const { data: anns } = await supabase
+        .from('announcements').select('*')
+        .order('created_at', { ascending: false })
+      if (anns) setAnnouncements(anns)
+
+      // Load modules from Supabase — remplace complètement les données locales
+      const { data: customMods } = await supabase
+        .from('custom_modules').select('*').order('updated_at', { ascending: false })
+      if (customMods && customMods.length > 0) {
+        // Construire map depuis Supabase
+        const modMap: Record<string, ModuleData> = {}
+        customMods.forEach(cm => { modMap[cm.id] = cm.data as ModuleData })
+        // Fusionner : priorité Supabase sur local, garder nouveaux modules Supabase
+        const localIds = (MODULES as any).map((m: ModuleData) => m.id)
+        const supabaseOnlyIds = Object.keys(modMap).filter(id => !localIds.includes(id))
+        const merged = [
+          ...(MODULES as any).map((m: ModuleData) => modMap[m.id] ? modMap[m.id] : m),
+          ...supabaseOnlyIds.map(id => modMap[id])
+        ]
+        setModules(merged)
+      }
+
+      // Load quizzes from Supabase — remplace complètement les données locales
+      const { data: customQuizzes } = await supabase
+        .from('custom_quizzes').select('*').order('updated_at', { ascending: false })
+      if (customQuizzes && customQuizzes.length > 0) {
+        const quizMap: Record<string, QuizData> = {}
+        customQuizzes.forEach(cq => { quizMap[cq.id] = cq.data as QuizData })
+        const localQIds = (QUIZZES as any).map((q: QuizData) => q.id)
+        const supabaseOnlyQIds = Object.keys(quizMap).filter(id => !localQIds.includes(id))
+        const mergedQ = [
+          ...(QUIZZES as any).map((q: QuizData) => quizMap[q.id] ? quizMap[q.id] : q),
+          ...supabaseOnlyQIds.map(id => quizMap[id])
+        ]
+        setQuizzes(mergedQ)
+      }
+
       setLoading(false)
     }
     init()
   }, [])
 
-  function showSaved(msg = '✅ Sauvegardé !') {
-    setSavedMsg(msg)
-    setTimeout(() => setSavedMsg(''), 2500)
-  }
-
-  // Module functions
+  // ── MODULE FUNCTIONS ──
   function startEditModule(mod: ModuleData) {
     setEditingModule(mod.id)
     setEditModuleData({ title_fr: mod.title_fr, title_en: mod.title_en, description_fr: mod.description_fr, icon: mod.icon })
   }
 
-  function saveModule(id: string) {
-    setModules(modules.map(m => m.id === id ? { ...m, ...editModuleData } : m))
+  async function saveModule(id: string) {
+    setSaving(true)
+    const updated = modules.map(m => m.id === id ? { ...m, ...editModuleData } : m)
+    setModules(updated)
+    const mod = updated.find(m => m.id === id)
+    // Save to Supabase
+    await supabase.from('custom_modules').upsert({ id, data: mod, updated_at: new Date().toISOString() })
     setEditingModule(null)
+    setSaving(false)
     showSaved()
   }
 
-  function deleteModule(id: string) {
-    if (confirm('Supprimer ce module ?')) {
-      setModules(modules.filter(m => m.id !== id))
-      showSaved('🗑️ Module supprimé')
-    }
+  async function deleteModule(id: string) {
+    if (!confirm('Supprimer ce module ?')) return
+    const updated = modules.filter(m => m.id !== id)
+    setModules(updated)
+    await supabase.from('custom_modules').delete().eq('id', id)
+    showSaved('🗑️ Module supprimé')
   }
 
-  // Lecon functions
+  // ── LECON FUNCTIONS ──
   function startEditLecon(lecon: ModuleLecon) {
     setEditingLecon(lecon.id)
     setEditLeconData({ title_fr: lecon.title_fr, title_en: lecon.title_en, content_fr: lecon.content_fr, content_en: lecon.content_en, duration_min: lecon.duration_min })
   }
 
-  function saveLecon(modId: string, leconId: string) {
-    setModules(modules.map(m => m.id === modId ? {
-      ...m,
-      lecons: m.lecons.map(l => l.id === leconId ? { ...l, ...editLeconData } : l)
-    } : m))
+  async function saveLecon(modId: string, leconId: string) {
+    setSaving(true)
+    const updated = modules.map(m => m.id === modId ? {
+      ...m, lecons: m.lecons.map(l => l.id === leconId ? { ...l, ...editLeconData } : l)
+    } : m)
+    setModules(updated)
+    const mod = updated.find(m => m.id === modId)
+    await supabase.from('custom_modules').upsert({ id: modId, data: mod, updated_at: new Date().toISOString() })
     setEditingLecon(null)
+    setSaving(false)
     showSaved()
   }
 
-  function deleteLecon(modId: string, leconId: string) {
-    if (confirm('Supprimer cette leçon ?')) {
-      setModules(modules.map(m => m.id === modId ? {
-        ...m,
-        lecons: m.lecons.filter(l => l.id !== leconId)
-      } : m))
-      showSaved('🗑️ Leçon supprimée')
-    }
+  async function deleteLecon(modId: string, leconId: string) {
+    if (!confirm('Supprimer cette leçon ?')) return
+    const updated = modules.map(m => m.id === modId ? {
+      ...m, lecons: m.lecons.filter(l => l.id !== leconId)
+    } : m)
+    setModules(updated)
+    const mod = updated.find(m => m.id === modId)
+    await supabase.from('custom_modules').upsert({ id: modId, data: mod, updated_at: new Date().toISOString() })
+    showSaved('🗑️ Leçon supprimée')
   }
 
-  function saveNewLecon(modId: string) {
+  async function saveNewLecon(modId: string) {
     if (!newLecon.title_fr) return
-    const lecon: ModuleLecon = {
-      id: `lecon-${Date.now()}`,
-      ...newLecon
-    }
-    setModules(modules.map(m => m.id === modId ? { ...m, lecons: [...m.lecons, lecon] } : m))
+    setSaving(true)
+    const lecon: ModuleLecon = { id: `lecon-${Date.now()}`, ...newLecon }
+    const updated = modules.map(m => m.id === modId ? { ...m, lecons: [...m.lecons, lecon] } : m)
+    setModules(updated)
+    const mod = updated.find(m => m.id === modId)
+    await supabase.from('custom_modules').upsert({ id: modId, data: mod, updated_at: new Date().toISOString() })
     setNewLecon({ title_fr:'', title_en:'', content_fr:'', content_en:'', duration_min:10 })
     setAddingLecon(null)
-    showSaved('✅ Leçon ajoutée !')
+    setSaving(false)
+    showSaved('✅ Leçon ajoutée et sauvegardée !')
   }
 
-  // Quiz functions
+  // ── QUIZ FUNCTIONS ──
   function startEditQuestion(q: QuizQuestion) {
     setEditingQuestion(q.id)
     setEditQData({ ...q })
   }
 
-  function saveQuestion(quizId: string, qId: string) {
-    setQuizzes(quizzes.map(quiz => quiz.id === quizId ? {
-      ...quiz,
-      questions: quiz.questions.map(q => q.id === qId ? { ...q, ...editQData } as QuizQuestion : q)
-    } : quiz))
+  async function saveQuestion(quizId: string, qId: string) {
+    setSaving(true)
+    const updated = quizzes.map(quiz => quiz.id === quizId ? {
+      ...quiz, questions: quiz.questions.map(q => q.id === qId ? { ...q, ...editQData } as QuizQuestion : q)
+    } : quiz)
+    setQuizzes(updated)
+    const quiz = updated.find(q => q.id === quizId)
+    await supabase.from('custom_quizzes').upsert({ id: quizId, data: quiz, updated_at: new Date().toISOString() })
     setEditingQuestion(null)
+    setSaving(false)
     showSaved()
   }
 
-  function deleteQuestion(quizId: string, qId: string) {
-    if (confirm('Supprimer cette question ?')) {
-      setQuizzes(quizzes.map(quiz => quiz.id === quizId ? {
-        ...quiz,
-        questions: quiz.questions.filter(q => q.id !== qId)
-      } : quiz))
-      showSaved('🗑️ Question supprimée')
-    }
+  async function deleteQuestion(quizId: string, qId: string) {
+    if (!confirm('Supprimer cette question ?')) return
+    const updated = quizzes.map(quiz => quiz.id === quizId ? {
+      ...quiz, questions: quiz.questions.filter(q => q.id !== qId)
+    } : quiz)
+    setQuizzes(updated)
+    const quiz = updated.find(q => q.id === quizId)
+    await supabase.from('custom_quizzes').upsert({ id: quizId, data: quiz, updated_at: new Date().toISOString() })
+    showSaved('🗑️ Question supprimée')
   }
 
-  function saveNewQuestion(quizId: string) {
+  async function saveNewQuestion(quizId: string) {
     if (!newQuestion.question_fr) return
+    setSaving(true)
     const q: QuizQuestion = {
       id: `q-${Date.now()}`,
       question_fr: newQuestion.question_fr || '',
@@ -220,26 +279,41 @@ export default function AdminPage() {
       explanation_fr: newQuestion.explanation_fr || '',
       explanation_en: newQuestion.explanation_en || '',
     }
-    setQuizzes(quizzes.map(quiz => quiz.id === quizId ? {
+    const updated = quizzes.map(quiz => quiz.id === quizId ? {
       ...quiz, questions: [...quiz.questions, q]
-    } : quiz))
+    } : quiz)
+    setQuizzes(updated)
+    const quiz = updated.find(qz => qz.id === quizId)
+    await supabase.from('custom_quizzes').upsert({ id: quizId, data: quiz, updated_at: new Date().toISOString() })
     setNewQuestion({ question_fr:'', question_en:'', options_fr:['','','',''], options_en:['','','',''], correct:0, explanation_fr:'', explanation_en:'' })
     setAddingQuestion(null)
-    showSaved('✅ Question ajoutée !')
+    setSaving(false)
+    showSaved('✅ Question ajoutée et sauvegardée !')
   }
 
-  // Announcement functions
-  function addAnnouncement() {
+  // ── ANNOUNCEMENT FUNCTIONS ──
+  async function addAnnouncement() {
     if (!newAnn.title || !newAnn.message) return
-    setAnnouncements([...announcements, {
-      id: Date.now().toString(),
-      title: newAnn.title,
-      message: newAnn.message,
-      active: true,
-      created_at: new Date().toISOString().split('T')[0]
-    }])
+    setSaving(true)
+    const { data, error } = await supabase.from('announcements')
+      .insert({ title: newAnn.title, message: newAnn.message, active: true })
+      .select().single()
+    if (data) setAnnouncements([data, ...announcements])
     setNewAnn({ title:'', message:'' })
+    setSaving(false)
     showSaved('✅ Annonce publiée !')
+  }
+
+  async function toggleAnnouncement(id: string, active: boolean) {
+    await supabase.from('announcements').update({ active: !active }).eq('id', id)
+    setAnnouncements(announcements.map(a => a.id === id ? {...a, active: !active} : a))
+  }
+
+  async function deleteAnnouncement(id: string) {
+    if (!confirm('Supprimer cette annonce ?')) return
+    await supabase.from('announcements').delete().eq('id', id)
+    setAnnouncements(announcements.filter(a => a.id !== id))
+    showSaved('🗑️ Annonce supprimée')
   }
 
   const totalLecons = modules.reduce((t, m) => t + m.lecons.length, 0)
@@ -270,17 +344,19 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-6xl animate-fade-in">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-display font-bold text-mouride-green">Dashboard Admin</h1>
-          <p className="text-gray-500 text-sm mt-1">Gérez votre plateforme Étudiant Mouride Academy</p>
+          <p className="text-gray-500 text-sm mt-1">Toutes les modifications sont sauvegardées dans Supabase</p>
         </div>
-        {savedMsg && (
-          <div className="bg-green-100 text-green-700 px-4 py-2 rounded-xl text-sm font-semibold animate-fade-in">
-            {savedMsg}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {saving && <span className="text-xs text-mouride-gold animate-pulse">💾 Sauvegarde en cours...</span>}
+          {savedMsg && (
+            <div className="bg-green-100 text-green-700 px-4 py-2 rounded-xl text-sm font-semibold">
+              {savedMsg}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -293,7 +369,7 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {/* ── STATS ── */}
+      {/* STATS */}
       {tab === 'stats' && (
         <div className="animate-fade-in">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -310,19 +386,15 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
-
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h3 className="font-display font-bold text-mouride-green mb-4">📚 Contenu</h3>
+              <h3 className="font-display font-bold text-mouride-green mb-4">📚 Modules</h3>
               <div className="space-y-2">
                 {modules.map(mod => (
                   <div key={mod.id} className="flex items-center gap-3 p-3 bg-mouride-cream rounded-xl">
                     <span>{mod.icon}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-mouride-green">{mod.title_fr}</p>
-                      <p className="text-xs text-gray-400">{mod.lecons.length} leçons</p>
-                    </div>
-                    <span className="text-xs text-mouride-gold font-bold">M{mod.order}</span>
+                    <div className="flex-1"><p className="text-sm font-medium text-mouride-green">{mod.title_fr}</p></div>
+                    <span className="text-xs text-mouride-gold font-bold">{mod.lecons.length} leçons</span>
                   </div>
                 ))}
                 <div className="p-3 bg-mouride-green rounded-xl text-white text-sm flex justify-between">
@@ -348,13 +420,12 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ── USERS ── */}
+      {/* USERS */}
       {tab === 'users' && (
         <div className="animate-fade-in">
           <div className="flex items-center gap-4 mb-4">
             <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher un utilisateur..."
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
+              placeholder="Rechercher..." className="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
             <span className="text-sm text-gray-400">{filteredUsers.length} utilisateur(s)</span>
           </div>
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -368,11 +439,9 @@ export default function AdminPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-mouride-cream">
-                    <tr>
-                      {['Utilisateur','Email','Pays','Inscription','Dernière activité'].map(h => (
-                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-mouride-green uppercase">{h}</th>
-                      ))}
-                    </tr>
+                    <tr>{['Utilisateur','Email','Pays','Inscription','Activité'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-mouride-green uppercase">{h}</th>
+                    ))}</tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {filteredUsers.map((u: Profile) => {
@@ -401,18 +470,16 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ── CONTENT ── */}
+      {/* CONTENT */}
       {tab === 'content' && (
         <div className="animate-fade-in space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-display font-bold text-mouride-green">📚 Modules & Leçons ({totalLecons} leçons)</h3>
-            <button onClick={() => {
-              const newMod: ModuleData = {
-                id: `mod-${Date.now()}`, icon:'📖', order: modules.length + 1,
-                title_fr:'Nouveau Module', title_en:'New Module',
-                description_fr:'Description du module', lecons:[]
-              }
-              setModules([...modules, newMod])
+            <h3 className="font-display font-bold text-mouride-green">📚 Modules ({totalLecons} leçons)</h3>
+            <button onClick={async () => {
+              const newMod: ModuleData = { id:`mod-${Date.now()}`, icon:'📖', order:modules.length+1, title_fr:'Nouveau Module', title_en:'New Module', description_fr:'Description', lecons:[] }
+              const updated = [...modules, newMod]
+              setModules(updated)
+              await supabase.from('custom_modules').upsert({ id:newMod.id, data:newMod, updated_at:new Date().toISOString() })
               showSaved('✅ Module créé !')
             }} className="text-sm bg-mouride-gold text-mouride-green px-4 py-2 rounded-xl font-semibold hover:opacity-90 transition">
               + Nouveau module
@@ -421,33 +488,27 @@ export default function AdminPage() {
 
           {modules.map(mod => (
             <div key={mod.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              {/* Module header */}
               {editingModule === mod.id ? (
                 <div className="p-4 bg-mouride-cream space-y-3">
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Icône</label>
-                      <input value={editModuleData.icon || ''} onChange={e => setEditModuleData({...editModuleData, icon:e.target.value})}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green" placeholder="Emoji"/>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Titre FR</label>
-                      <input value={editModuleData.title_fr || ''} onChange={e => setEditModuleData({...editModuleData, title_fr:e.target.value})}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Titre EN</label>
-                      <input value={editModuleData.title_en || ''} onChange={e => setEditModuleData({...editModuleData, title_en:e.target.value})}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Description FR</label>
-                      <input value={editModuleData.description_fr || ''} onChange={e => setEditModuleData({...editModuleData, description_fr:e.target.value})}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
-                    </div>
+                    {[
+                      { label:'Icône', key:'icon', ph:'Emoji' },
+                      { label:'Titre FR', key:'title_fr', ph:'Titre en français' },
+                      { label:'Titre EN', key:'title_en', ph:'Title in English' },
+                      { label:'Description FR', key:'description_fr', ph:'Description...' },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <label className="text-xs font-semibold text-gray-600 mb-1 block">{f.label}</label>
+                        <input value={(editModuleData as any)[f.key] || ''} onChange={e => setEditModuleData({...editModuleData, [f.key]:e.target.value})}
+                          placeholder={f.ph} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
+                      </div>
+                    ))}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => saveModule(mod.id)} className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold">✅ Sauvegarder</button>
+                    <button onClick={() => saveModule(mod.id)} disabled={saving}
+                      className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                      {saving ? '💾 Sauvegarde...' : '✅ Sauvegarder'}
+                    </button>
                     <button onClick={() => setEditingModule(null)} className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm">Annuler</button>
                   </div>
                 </div>
@@ -459,39 +520,33 @@ export default function AdminPage() {
                     <p className="text-xs text-gray-400">{mod.lecons.length} leçons</p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => startEditModule(mod)}
-                      className="text-xs bg-white border border-gray-200 text-mouride-green px-3 py-1.5 rounded-lg hover:bg-mouride-cream transition">
-                      ✏️ Modifier
+                    <button onClick={() => startEditModule(mod)} className="text-xs bg-white border border-gray-200 text-mouride-green px-3 py-1.5 rounded-lg hover:bg-mouride-cream transition">✏️ Modifier</button>
+                    <button onClick={() => deleteModule(mod.id)} className="text-xs bg-red-50 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">🗑️</button>
+                    <button onClick={() => setEditingModule(editingModule === `view-${mod.id}` ? null : `view-${mod.id}`)} className="text-gray-400 text-lg">
+                      {editingModule === `view-${mod.id}` ? '▲' : '▼'}
                     </button>
-                    <button onClick={() => deleteModule(mod.id)}
-                      className="text-xs bg-red-50 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">
-                      🗑️
-                    </button>
-                    <button onClick={() => setEditingModule(editingModule === `view-${mod.id}` ? null : `view-${mod.id}`)}
-                      className="text-gray-400 text-lg">{editingModule === `view-${mod.id}` ? '▲' : '▼'}</button>
                   </div>
                 </div>
               )}
 
-              {/* Leçons list */}
-              {(editingModule === `view-${mod.id}` || editingModule === mod.id) && editingModule !== mod.id && (
+              {editingModule === `view-${mod.id}` && (
                 <div className="p-4">
-                  <div className="space-y-2 mb-3">
+                  <div className="space-y-1 mb-3">
                     {mod.lecons.map((lecon, i) => (
                       <div key={lecon.id}>
                         {editingLecon === lecon.id ? (
-                          <div className="border border-mouride-gold rounded-xl p-4 space-y-3 bg-mouride-cream/50">
+                          <div className="border border-mouride-gold rounded-xl p-4 space-y-3 bg-mouride-cream/50 my-2">
                             <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 mb-1 block">Titre FR</label>
-                                <input value={editLeconData.title_fr || ''} onChange={e => setEditLeconData({...editLeconData, title_fr:e.target.value})}
-                                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
-                              </div>
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 mb-1 block">Titre EN</label>
-                                <input value={editLeconData.title_en || ''} onChange={e => setEditLeconData({...editLeconData, title_en:e.target.value})}
-                                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
-                              </div>
+                              {[
+                                { label:'Titre FR', key:'title_fr' },
+                                { label:'Titre EN', key:'title_en' },
+                              ].map(f => (
+                                <div key={f.key}>
+                                  <label className="text-xs font-semibold text-gray-600 mb-1 block">{f.label}</label>
+                                  <input value={(editLeconData as any)[f.key] || ''} onChange={e => setEditLeconData({...editLeconData, [f.key]:e.target.value})}
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
+                                </div>
+                              ))}
                               <div>
                                 <label className="text-xs font-semibold text-gray-600 mb-1 block">Durée (min)</label>
                                 <input type="number" value={editLeconData.duration_min || 10} onChange={e => setEditLeconData({...editLeconData, duration_min:parseInt(e.target.value)})}
@@ -500,16 +555,19 @@ export default function AdminPage() {
                             </div>
                             <div>
                               <label className="text-xs font-semibold text-gray-600 mb-1 block">Contenu FR</label>
-                              <textarea rows={4} value={editLeconData.content_fr || ''} onChange={e => setEditLeconData({...editLeconData, content_fr:e.target.value})}
+                              <textarea rows={5} value={editLeconData.content_fr || ''} onChange={e => setEditLeconData({...editLeconData, content_fr:e.target.value})}
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
                             </div>
                             <div>
                               <label className="text-xs font-semibold text-gray-600 mb-1 block">Contenu EN</label>
-                              <textarea rows={4} value={editLeconData.content_en || ''} onChange={e => setEditLeconData({...editLeconData, content_en:e.target.value})}
+                              <textarea rows={5} value={editLeconData.content_en || ''} onChange={e => setEditLeconData({...editLeconData, content_en:e.target.value})}
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
                             </div>
                             <div className="flex gap-2">
-                              <button onClick={() => saveLecon(mod.id, lecon.id)} className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold">✅ Sauvegarder</button>
+                              <button onClick={() => saveLecon(mod.id, lecon.id)} disabled={saving}
+                                className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                                {saving ? '💾...' : '✅ Sauvegarder'}
+                              </button>
                               <button onClick={() => setEditingLecon(null)} className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm">Annuler</button>
                             </div>
                           </div>
@@ -521,10 +579,8 @@ export default function AdminPage() {
                               <p className="text-xs text-gray-400">{lecon.duration_min} min</p>
                             </div>
                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => startEditLecon(lecon)}
-                                className="text-xs bg-mouride-cream text-mouride-green px-2 py-1 rounded-lg">✏️</button>
-                              <button onClick={() => deleteLecon(mod.id, lecon.id)}
-                                className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-lg">🗑️</button>
+                              <button onClick={() => startEditLecon(lecon)} className="text-xs bg-mouride-cream text-mouride-green px-2 py-1 rounded-lg">✏️</button>
+                              <button onClick={() => deleteLecon(mod.id, lecon.id)} className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-lg">🗑️</button>
                             </div>
                           </div>
                         )}
@@ -532,10 +588,9 @@ export default function AdminPage() {
                     ))}
                   </div>
 
-                  {/* Add new lecon */}
                   {addingLecon === mod.id ? (
                     <div className="border border-dashed border-mouride-gold rounded-xl p-4 space-y-3">
-                      <p className="text-sm font-semibold text-mouride-green">➕ Nouvelle leçon</p>
+                      <p className="text-sm font-bold text-mouride-green">➕ Nouvelle leçon</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="text-xs font-semibold text-gray-600 mb-1 block">Titre FR *</label>
@@ -550,7 +605,7 @@ export default function AdminPage() {
                         <div>
                           <label className="text-xs font-semibold text-gray-600 mb-1 block">Durée (min)</label>
                           <input type="number" value={newLecon.duration_min} onChange={e => setNewLecon({...newLecon, duration_min:parseInt(e.target.value)})}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green"/>
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"/>
                         </div>
                       </div>
                       <div>
@@ -564,7 +619,10 @@ export default function AdminPage() {
                           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none" placeholder="Lesson content..."/>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => saveNewLecon(mod.id)} className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold">✅ Ajouter</button>
+                        <button onClick={() => saveNewLecon(mod.id)} disabled={saving}
+                          className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                          {saving ? '💾...' : '✅ Ajouter'}
+                        </button>
                         <button onClick={() => setAddingLecon(null)} className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm">Annuler</button>
                       </div>
                     </div>
@@ -581,7 +639,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ── ANNOUNCEMENTS ── */}
+      {/* ANNOUNCEMENTS */}
       {tab === 'announcements' && (
         <div className="animate-fade-in space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -599,9 +657,9 @@ export default function AdminPage() {
                   placeholder="Contenu de l'annonce..." rows={3}
                   className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
               </div>
-              <button onClick={addAnnouncement}
-                className="bg-mouride-green text-white px-6 py-2 rounded-xl text-sm font-semibold hover:opacity-90 transition">
-                📣 Publier
+              <button onClick={addAnnouncement} disabled={saving}
+                className="bg-mouride-green text-white px-6 py-2 rounded-xl text-sm font-semibold hover:opacity-90 transition disabled:opacity-50">
+                {saving ? '💾 Sauvegarde...' : '📣 Publier dans Supabase'}
               </button>
             </div>
           </div>
@@ -610,36 +668,44 @@ export default function AdminPage() {
             <h3 className="font-display font-bold text-mouride-green mb-4">
               Annonces ({announcements.length}) — {announcements.filter(a=>a.active).length} actives
             </h3>
-            <div className="space-y-3">
-              {announcements.map(ann => (
-                <div key={ann.id} className={`rounded-xl p-4 border-2 transition-all ${ann.active ? 'border-mouride-gold bg-mouride-cream' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <p className="font-semibold text-mouride-green">{ann.title}</p>
-                      <p className="text-sm text-gray-600 mt-1">{ann.message}</p>
-                      <p className="text-xs text-gray-400 mt-2">📅 {ann.created_at}</p>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button onClick={() => setAnnouncements(announcements.map(a => a.id===ann.id ? {...a,active:!a.active} : a))}
-                        className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${ann.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {ann.active ? '✅ Actif' : '⏸️ Inactif'}
-                      </button>
-                      <button onClick={() => setAnnouncements(announcements.filter(a => a.id!==ann.id))}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                        🗑️
-                      </button>
+            {announcements.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-4">Aucune annonce pour le moment</p>
+            ) : (
+              <div className="space-y-3">
+                {announcements.map(ann => (
+                  <div key={ann.id} className={`rounded-xl p-4 border-2 transition-all ${ann.active ? 'border-mouride-gold bg-mouride-cream' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-mouride-green">{ann.title}</p>
+                        <p className="text-sm text-gray-600 mt-1">{ann.message}</p>
+                        <p className="text-xs text-gray-400 mt-2">📅 {new Date(ann.created_at).toLocaleDateString('fr-FR')}</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => toggleAnnouncement(ann.id, ann.active)}
+                          className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${ann.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {ann.active ? '✅ Actif' : '⏸️ Inactif'}
+                        </button>
+                        <button onClick={() => deleteAnnouncement(ann.id)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── QUIZ EDITOR ── */}
+      {/* QUIZ EDITOR */}
       {tab === 'quiz_editor' && (
         <div className="animate-fade-in space-y-6">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+            <strong>🎯 Quiz Editor</strong> — Toutes les modifications sont sauvegardées dans Supabase automatiquement.
+          </div>
+
           {quizzes.map(quiz => {
             const mod = modules.find(m => m.id === quiz.module_id)
             return (
@@ -663,40 +729,36 @@ export default function AdminPage() {
                         {editingQuestion === q.id ? (
                           <div className="p-4 space-y-3 bg-mouride-cream/50">
                             <p className="text-sm font-bold text-mouride-green">Modifier Q{i+1}</p>
+                            {[
+                              { label:'Question FR', key:'question_fr', rows:2 },
+                              { label:'Question EN', key:'question_en', rows:2 },
+                              { label:'Explication FR', key:'explanation_fr', rows:2 },
+                            ].map(f => (
+                              <div key={f.key}>
+                                <label className="text-xs font-semibold text-gray-600 mb-1 block">{f.label}</label>
+                                <textarea rows={f.rows} value={(editQData as any)[f.key] || ''} onChange={e => setEditQData({...editQData, [f.key]:e.target.value})}
+                                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
+                              </div>
+                            ))}
                             <div>
-                              <label className="text-xs font-semibold text-gray-600 mb-1 block">Question FR</label>
-                              <textarea rows={2} value={editQData.question_fr || ''} onChange={e => setEditQData({...editQData, question_fr:e.target.value})}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
-                            </div>
-                            <div>
-                              <label className="text-xs font-semibold text-gray-600 mb-1 block">Question EN</label>
-                              <textarea rows={2} value={editQData.question_en || ''} onChange={e => setEditQData({...editQData, question_en:e.target.value})}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
-                            </div>
-                            <div>
-                              <label className="text-xs font-semibold text-gray-600 mb-1 block">Options FR (4 options)</label>
+                              <label className="text-xs font-semibold text-gray-600 mb-1 block">Options FR (cliquez "Correct" pour la bonne réponse)</label>
                               {(editQData.options_fr || []).map((opt, j) => (
                                 <div key={j} className="flex items-center gap-2 mb-2">
                                   <span className={`text-xs font-bold w-6 ${j === editQData.correct ? 'text-green-600' : 'text-gray-400'}`}>{['A','B','C','D'][j]}</span>
-                                  <input value={opt} onChange={e => {
-                                    const opts = [...(editQData.options_fr || [])]
-                                    opts[j] = e.target.value
-                                    setEditQData({...editQData, options_fr:opts})
-                                  }} className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-mouride-green"/>
+                                  <input value={opt} onChange={e => { const opts = [...(editQData.options_fr||[])]; opts[j]=e.target.value; setEditQData({...editQData, options_fr:opts}) }}
+                                    className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-mouride-green"/>
                                   <button onClick={() => setEditQData({...editQData, correct:j})}
-                                    className={`text-xs px-2 py-1 rounded-lg transition ${j === editQData.correct ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-500'}`}>
-                                    {j === editQData.correct ? '✅' : 'Correct ?'}
+                                    className={`text-xs px-2 py-1 rounded-lg transition ${j===editQData.correct ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-500'}`}>
+                                    {j===editQData.correct ? '✅' : 'Correct ?'}
                                   </button>
                                 </div>
                               ))}
                             </div>
-                            <div>
-                              <label className="text-xs font-semibold text-gray-600 mb-1 block">Explication FR</label>
-                              <textarea rows={2} value={editQData.explanation_fr || ''} onChange={e => setEditQData({...editQData, explanation_fr:e.target.value})}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none"/>
-                            </div>
                             <div className="flex gap-2">
-                              <button onClick={() => saveQuestion(quiz.id, q.id)} className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold">✅ Sauvegarder</button>
+                              <button onClick={() => saveQuestion(quiz.id, q.id)} disabled={saving}
+                                className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                                {saving ? '💾...' : '✅ Sauvegarder'}
+                              </button>
                               <button onClick={() => setEditingQuestion(null)} className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm">Annuler</button>
                             </div>
                           </div>
@@ -705,9 +767,9 @@ export default function AdminPage() {
                             <span className="text-xs text-mouride-gold font-bold mt-1 w-6 flex-shrink-0">Q{i+1}</span>
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-800 mb-2">{q.question_fr}</p>
-                              <div className="grid grid-cols-2 gap-1.5">
+                              <div className="grid grid-cols-2 gap-1">
                                 {q.options_fr.map((opt, j) => (
-                                  <div key={j} className={`text-xs px-2 py-1 rounded-lg ${j === q.correct ? 'bg-green-100 text-green-700 font-semibold' : 'bg-gray-50 text-gray-500'}`}>
+                                  <div key={j} className={`text-xs px-2 py-1 rounded-lg ${j===q.correct ? 'bg-green-100 text-green-700 font-semibold' : 'bg-gray-50 text-gray-500'}`}>
                                     {['A','B','C','D'][j]}. {opt}
                                   </div>
                                 ))}
@@ -722,45 +784,39 @@ export default function AdminPage() {
                       </div>
                     ))}
 
-                    {/* Add new question */}
                     {addingQuestion === quiz.id ? (
                       <div className="border border-dashed border-mouride-gold rounded-xl p-4 space-y-3">
                         <p className="text-sm font-bold text-mouride-green">➕ Nouvelle question</p>
+                        {[
+                          { label:'Question FR *', key:'question_fr', rows:2, ph:'Question en français...' },
+                          { label:'Question EN', key:'question_en', rows:2, ph:'Question in English...' },
+                          { label:'Explication FR', key:'explanation_fr', rows:2, ph:'Explication de la bonne réponse...' },
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label className="text-xs font-semibold text-gray-600 mb-1 block">{f.label}</label>
+                            <textarea rows={f.rows} value={(newQuestion as any)[f.key] || ''} onChange={e => setNewQuestion({...newQuestion, [f.key]:e.target.value})}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none" placeholder={f.ph}/>
+                          </div>
+                        ))}
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 mb-1 block">Question FR *</label>
-                          <textarea rows={2} value={newQuestion.question_fr || ''} onChange={e => setNewQuestion({...newQuestion, question_fr:e.target.value})}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none" placeholder="Question en français..."/>
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 mb-1 block">Question EN</label>
-                          <textarea rows={2} value={newQuestion.question_en || ''} onChange={e => setNewQuestion({...newQuestion, question_en:e.target.value})}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none" placeholder="Question in English..."/>
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 mb-1 block">Options FR (4 options — cliquez "Correct" pour la bonne réponse)</label>
+                          <label className="text-xs font-semibold text-gray-600 mb-1 block">Options FR</label>
                           {(newQuestion.options_fr || []).map((opt, j) => (
                             <div key={j} className="flex items-center gap-2 mb-2">
-                              <span className={`text-xs font-bold w-6 ${j === newQuestion.correct ? 'text-green-600' : 'text-gray-400'}`}>{['A','B','C','D'][j]}</span>
-                              <input value={opt} onChange={e => {
-                                const opts = [...(newQuestion.options_fr || ['','','',''])]
-                                opts[j] = e.target.value
-                                const optsEn = [...(newQuestion.options_en || ['','','',''])]
-                                setNewQuestion({...newQuestion, options_fr:opts, options_en:optsEn})
-                              }} className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-mouride-green" placeholder={`Option ${['A','B','C','D'][j]}`}/>
+                              <span className={`text-xs font-bold w-6 ${j===newQuestion.correct ? 'text-green-600' : 'text-gray-400'}`}>{['A','B','C','D'][j]}</span>
+                              <input value={opt} onChange={e => { const opts=[...(newQuestion.options_fr||['','','',''])]; opts[j]=e.target.value; setNewQuestion({...newQuestion, options_fr:opts}) }}
+                                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-mouride-green" placeholder={`Option ${['A','B','C','D'][j]}`}/>
                               <button onClick={() => setNewQuestion({...newQuestion, correct:j})}
-                                className={`text-xs px-2 py-1 rounded-lg transition ${j === newQuestion.correct ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-500'}`}>
-                                {j === newQuestion.correct ? '✅' : 'Correct ?'}
+                                className={`text-xs px-2 py-1 rounded-lg transition ${j===newQuestion.correct ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-500'}`}>
+                                {j===newQuestion.correct ? '✅' : 'Correct ?'}
                               </button>
                             </div>
                           ))}
                         </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 mb-1 block">Explication FR</label>
-                          <textarea rows={2} value={newQuestion.explanation_fr || ''} onChange={e => setNewQuestion({...newQuestion, explanation_fr:e.target.value})}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-mouride-green resize-none" placeholder="Explication de la bonne réponse..."/>
-                        </div>
                         <div className="flex gap-2">
-                          <button onClick={() => saveNewQuestion(quiz.id)} className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold">✅ Ajouter</button>
+                          <button onClick={() => saveNewQuestion(quiz.id)} disabled={saving}
+                            className="bg-mouride-green text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                            {saving ? '💾...' : '✅ Ajouter'}
+                          </button>
                           <button onClick={() => setAddingQuestion(null)} className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm">Annuler</button>
                         </div>
                       </div>
