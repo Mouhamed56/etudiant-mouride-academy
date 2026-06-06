@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  
+  <!-- Fond -->
+  <rect width="512" height="512" rx="100" fill="#0f3324"/>
+  
+  <!-- Cercle doré décoratif -->
+  <circle cx="256" cy="200" r="140" fill="none" stroke="#d4a843" stroke-width="1.5" opacity="0.3"/>
+  <circle cx="256" cy="200" r="120" fill="none" stroke="#d4a843" stroke-width="0.8" opacity="0.2"/>
+
+  <!-- ── MOSQUÉE GRANDE SIMPLE ── -->
+
+  <!-- Base / plateforme -->
+  <rect x="110" y="280" width="292" height="12" rx="3" fill="#d4a843" opacity="0.9"/>
+
+  <!-- Corps central -->
+  <rect x="170" y="210" width="172" height="72" fill="#f7edd8"/>
+
+  <!-- Grand dôme -->
+  <path d="M170 210 Q170 140 256 130 Q342 140 342 210 Z" fill="#f7edd8"/>
+
+  <!-- Dôme intérieur (relief) -->
+  <path d="M196 210 Q196 162 256 155 Q316 162 316 210 Z" fill="#eddeb8"/>
+
+  <!-- Croissant et tige -->
+  <line x1="256" y1="130" x2="256" y2="108" stroke="#d4a843" stroke-width="3"/>
+  <path d="M248 112 Q256 103 264 112 Q257 107 248 112Z" fill="#d4a843"/>
+  <circle cx="256" cy="104" r="3" fill="#d4a843"/>
+
+  <!-- Porte arche centrale -->
+  <path d="M228 292 L228 248 Q256 235 284 248 L284 292 Z" fill="#0f3324"/>
+  <rect x="234" y="260" width="44" height="32" fill="#0f3324"/>
+
+  <!-- Fenêtre gauche arche -->
+  <path d="M182 268 L182 248 Q196 240 210 248 L210 268 Z" fill="#d4a843" opacity="0.35"/>
+
+  <!-- Fenêtre droite arche -->
+  <path d="M302 268 L302 248 Q316 240 330 248 L330 268 Z" fill="#d4a843" opacity="0.35"/>
+
+  <!-- Minaret gauche -->
+  <rect x="122" y="170" width="30" height="122" rx="3" fill="#f7edd8"/>
+  <path d="M122 170 Q137 148 152 170 Z" fill="#eddeb8"/>
+  <line x1="137" y1="148" x2="137" y2="130" stroke="#d4a843" stroke-width="2.5"/>
+  <path d="M132 133 Q137 126 142 133 Q137 129 132 133Z" fill="#d4a843"/>
+
+  <!-- Minaret droit -->
+  <rect x="360" y="170" width="30" height="122" rx="3" fill="#f7edd8"/>
+  <path d="M360 170 Q375 148 390 170 Z" fill="#eddeb8"/>
+  <line x1="375" y1="148" x2="375" y2="130" stroke="#d4a843" stroke-width="2.5"/>
+  <path d="M370 133 Q375 126 380 133 Q375 129 370 133Z" fill="#d4a843"/>
+
+  <!-- ── LIVRE OUVERT ── -->
+  <!-- Ombre livre -->
+  <ellipse cx="256" cy="358" rx="70" ry="6" fill="#000" opacity="0.15"/>
+
+  <!-- Page gauche -->
+  <path d="M188 310 Q188 305 196 303 L248 300 L248 355 L196 358 Q188 360 188 355 Z" fill="#f7edd8" stroke="#d4a843" stroke-width="1.2"/>
+  <!-- Lignes page gauche -->
+  <line x1="198" y1="315" x2="242" y2="313" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="198" y1="323" x2="242" y2="321" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="198" y1="331" x2="242" y2="330" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="198" y1="339" x2="242" y2="338" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="198" y1="347" x2="230" y2="346" stroke="#c8a830" stroke-width="1.2" opacity="0.3"/>
+
+  <!-- Spine / reliure -->
+  <path d="M248 300 Q256 298 264 300 L264 355 Q256 357 248 355 Z" fill="#d4a843"/>
+
+  <!-- Page droite -->
+  <path d="M264 300 L316 303 Q324 305 324 310 L324 355 Q324 360 316 358 L264 355 Z" fill="#f7edd8" stroke="#d4a843" stroke-width="1.2"/>
+  <!-- Lignes page droite -->
+  <line x1="270" y1="313" x2="314" y2="315" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="270" y1="321" x2="314" y2="323" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="270" y1="330" x2="314" y2="331" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="270" y1="338" x2="314" y2="339" stroke="#c8a830" stroke-width="1.2" opacity="0.5"/>
+  <line x1="282" y1="346" x2="314" y2="347" stroke="#c8a830" stroke-width="1.2" opacity="0.3"/>
+
+  <!-- ── TEXTE ── -->
+  <!-- Ligne décorative -->
+  <line x1="90" y1="388" x2="422" y2="388" stroke="#d4a843" stroke-width="0.8" opacity="0.4"/>
+
+  <!-- ÉTUDIANT MOURIDE -->
+  <text x="256" y="418" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="bold" fill="#d4a843" text-anchor="middle" letter-spacing="2">ÉTUDIANT</text>
+  <text x="256" y="456" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="bold" fill="white" text-anchor="middle" letter-spacing="3">MOURIDE</text>
+
+  <!-- Points décoratifs -->
+  <circle cx="106" cy="437" r="3" fill="#d4a843" opacity="0.6"/>
+  <circle cx="406" cy="437" r="3" fill="#d4a843" opacity="0.6"/>
+
+</svg>
