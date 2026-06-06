@@ -1,0 +1,16 @@
+{
+  "name": "Étudiant Mouride Academy",
+  "short_name": "Mouride Academy",
+  "description": "Plateforme d'enseignement sur Cheikh Ahmadou Bamba Khadimou Rassoul",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f3324",
+  "theme_color": "#0f3324",
+  "orientation": "portrait",
+  "lang": "fr",
+  "categories": ["education", "religion"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
