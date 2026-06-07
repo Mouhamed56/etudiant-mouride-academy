@@ -9,7 +9,16 @@ export const metadata: Metadata = {
   title: 'Étudiant Mouride Academy',
   description: 'Plateforme éducative dédiée à la pensée de Cheikh Ahmadou Bamba',
   icons: {
-    icon: '/images/logo.png',
+    icon: '/icon-512.png',
+    apple: '/icon-512.png',
+    shortcut: '/icon-512.png',
+  },
+  manifest: '/manifest.json',
+  themeColor: '#0f3324',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Mouride Academy',
   },
 }
 
